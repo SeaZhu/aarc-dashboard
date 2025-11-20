@@ -1,7 +1,7 @@
 import itertools
 from collections import Counter
 from io import BytesIO
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import networkx as nx
@@ -32,6 +32,10 @@ def ensure_nltk():
         nltk.data.find("tokenizers/punkt")
     except LookupError:
         nltk.download("punkt")
+    try:
+        nltk.data.find("tokenizers/punkt_tab")
+    except LookupError:
+        nltk.download("punkt_tab")
     try:
         nltk.data.find("corpora/stopwords")
     except LookupError:
@@ -169,9 +173,133 @@ def download_button(df: pd.DataFrame, label: str, filename: str):
     st.download_button(label, data=buffer.getvalue(), file_name=filename, mime="text/csv")
 
 
+def render_overview(df: pd.DataFrame):
+    st.header("Dataset Overview")
+    st.caption("Preview and explore the structure of the loaded survey responses.")
+
+    st.markdown("**Preview (first 50 rows)**")
+    st.dataframe(df.head(50))
+
+    st.markdown("**Basic statistics**")
+    st.write(df.describe(include="all").transpose())
+
+    st.markdown("**Value counts by column**")
+    col1, col2 = st.columns(2)
+    with col1:
+        count_col = st.selectbox("Select column for counts", df.columns)
+    with col2:
+        top_n = st.slider("Show top N values", 5, 30, 10, key="overview_topn")
+    counts = df[count_col].value_counts().head(top_n)
+    st.bar_chart(counts)
+
+
+def render_cleaning(df: pd.DataFrame, text_col: str, clean_texts: List[str], tokens_list: List[List[str]]):
+    st.header("Text Cleaning & Keywords")
+    st.caption("Inspect cleaned survey responses and the most important words.")
+
+    st.markdown("**Sample cleaned rows**")
+    preview_df = pd.DataFrame({"original": df[text_col].head(10), "cleaned": clean_texts[:10]})
+    st.dataframe(preview_df)
+
+    frequencies = Counter(itertools.chain.from_iterable(tokens_list))
+    freq_df = pd.DataFrame(frequencies.most_common(50), columns=["term", "frequency"])
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.markdown("**Top keywords**")
+        st.dataframe(freq_df)
+    with col2:
+        st.markdown("**Word Cloud**")
+        plot_wordcloud(dict(frequencies))
+
+    st.markdown("**Most frequent terms**")
+    fig, ax = plt.subplots(figsize=(6, 8))
+    sns.barplot(data=freq_df.head(25), y="term", x="frequency", palette="mako", ax=ax)
+    ax.set_title("Top Terms")
+    st.pyplot(fig)
+
+
+def render_sentiment(df: pd.DataFrame, text_col: str, group_col: str, sentiment_df: pd.DataFrame):
+    st.header("Sentiment Analysis")
+    st.caption("VADER-based polarity scores and distributions for each response.")
+
+    combined = pd.concat([df.reset_index(drop=True), sentiment_df], axis=1)
+    st.markdown("**Per-response sentiment**")
+    st.dataframe(combined[[text_col, "compound", "sentiment"]])
+
+    st.markdown("**Sentiment distribution**")
+    fig, ax = plt.subplots()
+    sns.countplot(data=combined, x="sentiment", palette=["#ef4444", "#d1d5db", "#10b981"], ax=ax)
+    ax.set_xlabel("Sentiment label")
+    ax.set_ylabel("Count")
+    st.pyplot(fig)
+
+    if group_col:
+        st.markdown("**Average sentiment by group**")
+        grouped = combined.groupby(group_col)["compound"].mean().reset_index()
+        fig2, ax2 = plt.subplots(figsize=(8, 4))
+        sns.barplot(data=grouped, x=group_col, y="compound", palette="viridis", ax=ax2)
+        ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha="right")
+        ax2.axhline(0, color="#9ca3af", linestyle="--", linewidth=1)
+        st.pyplot(fig2)
+
+
+def render_topics(clean_texts: List[str]):
+    st.header("Topic Modeling (LDA)")
+    st.caption("Discover common themes across survey responses.")
+
+    n_topics = st.slider("Number of topics", 2, 8, 3)
+    max_features = st.slider("Max vocabulary size", 300, 2000, 1000, step=100)
+    try:
+        topic_matrix, topic_keywords = topic_model(clean_texts, n_topics, max_features=max_features)
+        topics_df = pd.DataFrame(topic_keywords)
+        st.markdown("**Top keywords per topic**")
+        st.dataframe(topics_df)
+        plot_topic_distribution(topic_matrix)
+        return topics_df
+    except ValueError:
+        st.error("Not enough data to build topics. Try adjusting the topic count or cleaning options.")
+        return None
+
+
+def render_network(tokens_list: List[List[str]]):
+    st.header("Word Co-occurrence Network")
+    st.caption("Relationships between high-frequency terms shown as a network graph.")
+
+    top_n_terms = st.slider("Top N terms to consider", 10, 50, 20)
+    min_co = st.slider("Minimum co-occurrence to display", 1, 5, 2)
+    freq, co_counts = build_cooccurrence(tokens_list, top_n_terms)
+    plot_network(freq, co_counts, min_co)
+
+
+def render_export(df: pd.DataFrame, clean_texts: List[str], sentiment_df: pd.DataFrame, topics_df: Optional[pd.DataFrame]):
+    st.header("Export Analysis")
+    st.caption("Download cleaned text, sentiment, or topic outputs as CSV files.")
+
+    combined = pd.concat([df.reset_index(drop=True), sentiment_df], axis=1)
+    download_button(combined, "Download sentiment results", "sentiment_results.csv")
+    if topics_df is not None:
+        download_button(topics_df, "Download topic keywords", "topic_keywords.csv")
+    cleaned_df = pd.DataFrame({"cleaned_text": clean_texts})
+    download_button(cleaned_df, "Download cleaned text", "cleaned_text.csv")
+
+
 def main():
     st.title("AARC Survey Text Analytics Dashboard")
     st.caption("Explore survey responses with quick text analytics")
+
+    st.sidebar.header("Navigation")
+    page = st.sidebar.radio(
+        "Choose a page",
+        [
+            "Dataset Overview",
+            "Text Cleaning & Keywords",
+            "Sentiment Analysis",
+            "Topic Modeling",
+            "Co-occurrence Network",
+            "Export Results",
+        ],
+    )
 
     st.sidebar.header("Data Source")
     source = st.sidebar.radio(
@@ -202,96 +330,26 @@ def main():
     clean_texts, tokens_list = preprocess_text(df[text_col])
     sentiment_df = get_sentiment(clean_texts)
 
-    tabs = st.tabs([
-        "Dataset Overview",
-        "Text Cleaning & Keywords",
-        "Sentiment Analysis",
-        "Topic Modeling",
-        "Co-occurrence Network",
-        "Export Results",
-    ])
-
-    with tabs[0]:
-        st.subheader("Dataset Overview")
-        st.dataframe(df.head(50))
-        st.markdown("**Basic statistics**")
-        st.write(df.describe(include="all").transpose())
-        st.markdown("**Value counts by column**")
-        col1, col2 = st.columns(2)
-        with col1:
-            count_col = st.selectbox("Select column for counts", df.columns)
-        with col2:
-            top_n = st.slider("Show top N values", 5, 30, 10)
-        counts = df[count_col].value_counts().head(top_n)
-        st.bar_chart(counts)
-
-    with tabs[1]:
-        st.subheader("Clean Text & Keywords")
-        st.markdown("Preview of cleaned text")
-        preview_df = pd.DataFrame({"original": df[text_col].head(10), "cleaned": clean_texts[:10]})
-        st.dataframe(preview_df)
-
-        frequencies = Counter(itertools.chain.from_iterable(tokens_list))
-        freq_df = pd.DataFrame(frequencies.most_common(30), columns=["term", "frequency"])
-
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.markdown("**Top keywords**")
-            st.dataframe(freq_df)
-        with col2:
-            st.markdown("**Word Cloud**")
-            plot_wordcloud(dict(frequencies))
-
-        fig, ax = plt.subplots()
-        sns.barplot(data=freq_df.head(20), y="term", x="frequency", palette="mako", ax=ax)
-        ax.set_title("Most Frequent Terms")
-        st.pyplot(fig)
-
-    with tabs[2]:
-        st.subheader("Sentiment Analysis")
-        combined = pd.concat([df.reset_index(drop=True), sentiment_df], axis=1)
-        st.dataframe(combined[[text_col, "compound", "sentiment"]])
-
-        st.markdown("**Sentiment Distribution**")
-        fig, ax = plt.subplots()
-        sns.countplot(data=combined, x="sentiment", palette=["#ef4444", "#d1d5db", "#10b981"], ax=ax)
-        st.pyplot(fig)
-
-        if group_col:
-            st.markdown("**Average sentiment by group**")
-            grouped = combined.groupby(group_col)["compound"].mean().reset_index()
-            fig2, ax2 = plt.subplots(figsize=(8, 4))
-            sns.barplot(data=grouped, x=group_col, y="compound", palette="viridis", ax=ax2)
-            ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha="right")
-            st.pyplot(fig2)
-
-    with tabs[3]:
-        st.subheader("Topic Modeling (LDA)")
-        n_topics = st.slider("Number of topics", 2, 8, 3)
+    topics_df: Optional[pd.DataFrame] = None
+    if page == "Dataset Overview":
+        render_overview(df)
+    elif page == "Text Cleaning & Keywords":
+        render_cleaning(df, text_col, clean_texts, tokens_list)
+    elif page == "Sentiment Analysis":
+        render_sentiment(df, text_col, group_col, sentiment_df)
+    elif page == "Topic Modeling":
+        topics_df = render_topics(clean_texts)
+    elif page == "Co-occurrence Network":
+        render_network(tokens_list)
+    elif page == "Export Results":
+        export_topics = st.slider("Topics to include in export", 2, 8, 3)
+        export_features = st.slider("Max vocabulary for export topics", 300, 2000, 1000, step=100)
         try:
-            topic_matrix, topic_keywords = topic_model(clean_texts, n_topics)
+            _, topic_keywords = topic_model(clean_texts, export_topics, max_features=export_features)
             topics_df = pd.DataFrame(topic_keywords)
-            st.markdown("**Top keywords per topic**")
-            st.dataframe(topics_df)
-            plot_topic_distribution(topic_matrix)
         except ValueError:
-            st.error("Not enough data to build topics. Try adjusting the topic count or cleaning options.")
-
-    with tabs[4]:
-        st.subheader("Word Co-occurrence Network")
-        top_n_terms = st.slider("Top N terms to consider", 10, 50, 20)
-        min_co = st.slider("Minimum co-occurrence to display", 1, 5, 2)
-        freq, co_counts = build_cooccurrence(tokens_list, top_n_terms)
-        plot_network(freq, co_counts, min_co)
-
-    with tabs[5]:
-        st.subheader("Export Analysis")
-        combined = pd.concat([df.reset_index(drop=True), sentiment_df], axis=1)
-        download_button(combined, "Download sentiment results", "sentiment_results.csv")
-        if "topics_df" in locals():
-            download_button(topics_df, "Download topic keywords", "topic_keywords.csv")
-        cleaned_df = pd.DataFrame({"cleaned_text": clean_texts})
-        download_button(cleaned_df, "Download cleaned text", "cleaned_text.csv")
+            topics_df = None
+        render_export(df, clean_texts, sentiment_df, topics_df)
 
 
 if __name__ == "__main__":
