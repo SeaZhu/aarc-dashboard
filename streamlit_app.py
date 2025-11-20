@@ -50,38 +50,16 @@ def main():
     st.caption("Explore survey responses with quick text analytics")
 
     init_state()
-
-    st.sidebar.header("Data Source")
-    with st.sidebar.form("data_source_form"):
-        source = st.radio(
-            "Choose data source",
-            ["sample", "upload", "url"],
-            index=0,
-            format_func=lambda x: {
-                "sample": "Use bundled sample",
-                "upload": "Upload CSV/XLSX",
-                "url": "GitHub raw URL",
-            }[x],
-        )
-        upload = st.file_uploader("Upload survey file", type=["csv", "xlsx"], key="upload_widget")
-        url = st.text_input("GitHub raw URL (CSV/XLSX)")
-        load_clicked = st.form_submit_button("Load data")
-
-    if load_clicked:
-        df = load_data(source, upload, url)
+    if st.session_state.df is None or st.session_state.df.empty:
+        df = load_data()
         if df.empty:
-            st.error("No data loaded. Please verify the file or URL.")
-        else:
-            st.session_state.df = df
-            reset_processing()
-            st.success(f"Loaded {df.shape[0]} rows and {df.shape[1]} columns.")
+            st.error("Failed to load the bundled AARC survey data.")
+            return
+        st.session_state.df = df
+        reset_processing()
 
     df = st.session_state.df
-    if df is None or df.empty:
-        st.info("Use the sidebar to load a dataset. All feature pages will become available once data is loaded.")
-        return
-
-    st.success(f"Active dataset: {df.shape[0]} rows and {df.shape[1]} columns.")
+    st.success(f"Active dataset loaded: {df.shape[0]} rows and {df.shape[1]} columns from the bundled AARC survey file.")
 
     text_columns = df.select_dtypes(include=["object"]).columns.tolist()
     if not text_columns:
@@ -105,9 +83,9 @@ def main():
     st.markdown(
         """
         ### How to use this app
-        - Use the built-in Streamlit sidebar navigation to open pages for overview, cleaning, sentiment, topics, network, and export.
-        - Return to this Home page anytime to switch datasets or change the text column used across all analyses.
-        - Each page will automatically consume the processed text, tokens, and sentiment stored in the session state.
+        - The bundled `data/AARC-Survey-Responses.xlsx` file is preloaded automatically for all analyses.
+        - Use the sidebar page navigation to open the overview, cleaning, sentiment, topic modeling, network, and export pages.
+        - Return to this Home page anytime to switch the text column or grouping column used across the app.
         """
     )
 

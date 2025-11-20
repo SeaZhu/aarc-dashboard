@@ -44,19 +44,9 @@ def ensure_nltk():
 
 
 @st.cache_data(show_spinner=True)
-def load_data(source: str, upload, url: str) -> pd.DataFrame:
-    if source == "sample":
-        path = "data/AARC-Survey-Responses.xlsx"
-        return pd.read_excel(path)
-    if source == "upload" and upload is not None:
-        if upload.name.endswith(".csv"):
-            return pd.read_csv(upload)
-        return pd.read_excel(upload)
-    if source == "url" and url:
-        if url.lower().endswith(".csv"):
-            return pd.read_csv(url)
-        return pd.read_excel(url)
-    return pd.DataFrame()
+def load_data() -> pd.DataFrame:
+    """Load the bundled AARC survey responses from the local data folder."""
+    return pd.read_excel("data/AARC-Survey-Responses.xlsx")
 
 
 def preprocess_text(series: pd.Series) -> Tuple[List[str], List[List[str]]]:
@@ -166,7 +156,7 @@ def download_button(df: pd.DataFrame, label: str, filename: str):
 
 def require_processed_data() -> bool:
     if "df" not in st.session_state or st.session_state.get("df") is None or st.session_state.df.empty:
-        st.warning("Please return to the Home page to load data and choose a text column.")
+        st.warning("Dataset not ready. Go to the Home page to initialize the built-in AARC survey data.")
         return False
     if "clean_texts" not in st.session_state or "tokens_list" not in st.session_state:
         st.warning("Text processing has not been completed. Configure columns on the Home page.")
