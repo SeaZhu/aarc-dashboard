@@ -1,4 +1,5 @@
 import itertools
+import json
 from collections import Counter
 from io import BytesIO
 from typing import List, Optional, Tuple
@@ -70,6 +71,45 @@ def hide_main_nav_entry():
         <style>
         [data-testid="stSidebarNav"] ul li:first-child {display: none;}
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    nav_label_overrides = {
+        "Overview": "📊 Overview",
+        "Text Cleaning and Ngrams": "🧹 Text Cleaning & N-grams",
+        "Sentiment Analysis": "😊 Sentiment Analysis",
+        "Topic Modeling Lda": "🧩 Topic Modeling (LDA)",
+        "Word Cooccurrence Network": "🕸️ Word Co-occurrence Network",
+        "Export Results": "💾 Export Results",
+    }
+    st.markdown(
+        f"""
+        <script>
+        const navLabels = {json.dumps(nav_label_overrides)};
+        const updateNavLabels = () => {{
+            const nav = window.parent.document.querySelector('[data-testid="stSidebarNav"] ul');
+            if (!nav) return;
+            const links = nav.querySelectorAll('a');
+            links.forEach((link) => {{
+                const labelEl = link.querySelector('p');
+                if (!labelEl) return;
+                const current = labelEl.innerText.trim();
+                const replacement = navLabels[current];
+                if (replacement && labelEl.innerText !== replacement) {{
+                    labelEl.innerText = replacement;
+                }}
+            }});
+        }};
+
+        const navContainer = window.parent.document.querySelector('[data-testid="stSidebarNav"]');
+        if (navContainer) {{
+            const observer = new MutationObserver(updateNavLabels);
+            observer.observe(navContainer, {{ childList: true, subtree: true }});
+        }}
+
+        updateNavLabels();
+        </script>
         """,
         unsafe_allow_html=True,
     )
