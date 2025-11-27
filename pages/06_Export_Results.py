@@ -10,7 +10,7 @@ from app_utils import (
 )
 
 
-st.set_page_config(page_title="06 Export Results", page_icon="💾")
+st.set_page_config(page_title="Export Results", page_icon="💾")
 
 
 def main():

@@ -3,7 +3,7 @@ import streamlit as st
 from app_utils import ensure_data_with_sidebar, hide_main_nav_entry, render_topics, require_processed_data
 
 
-st.set_page_config(page_title="04 Topic Modeling (LDA)", page_icon="🧩")
+st.set_page_config(page_title="Topic Modeling (LDA)", page_icon="🧩")
 
 
 def main():

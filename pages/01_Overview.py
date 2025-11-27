@@ -3,7 +3,7 @@ import streamlit as st
 from app_utils import ensure_data_with_sidebar, hide_main_nav_entry, render_overview
 
 
-st.set_page_config(page_title="01 Overview", page_icon="📊")
+st.set_page_config(page_title="Overview", page_icon="📊")
 
 
 def main():

@@ -3,7 +3,7 @@ import streamlit as st
 from app_utils import ensure_data_with_sidebar, hide_main_nav_entry, render_cleaning, require_processed_data
 
 
-st.set_page_config(page_title="02 Text Cleaning & N-grams", page_icon="🧹")
+st.set_page_config(page_title="Text Cleaning & N-grams", page_icon="🧹")
 
 
 def main():
