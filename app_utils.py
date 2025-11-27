@@ -63,6 +63,41 @@ def init_state():
             st.session_state[key] = value
 
 
+def hide_main_nav_entry():
+    """Hide the implicit entry for the root script so only named pages appear."""
+    st.markdown(
+        """
+        <style>
+        [data-testid="stSidebarNav"] ul li:first-child {display: none;}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def ensure_dataset_loaded() -> Optional[pd.DataFrame]:
+    """Load and cache the bundled dataset into session state if needed."""
+    init_state()
+    if st.session_state.df is None or st.session_state.df.empty:
+        df = load_data()
+        if df.empty:
+            st.error("Failed to load the bundled AARC survey data.")
+            return None
+        st.session_state.df = df
+        reset_processing()
+    return st.session_state.df
+
+
+def ensure_data_with_sidebar() -> Optional[pd.DataFrame]:
+    """Load data if needed and render the shared text settings sidebar."""
+    df = ensure_dataset_loaded()
+    if df is None:
+        return None
+    if not render_text_settings_sidebar(df):
+        return None
+    return df
+
+
 def reset_processing():
     st.session_state.clean_texts = None
     st.session_state.tokens_list = None
@@ -210,12 +245,14 @@ def download_button(df: pd.DataFrame, label: str, filename: str):
 
 
 def require_processed_data() -> bool:
-    init_state()
-    if "df" not in st.session_state or st.session_state.get("df") is None or st.session_state.df.empty:
-        st.warning("Dataset not ready. Open the Overview page to initialize the built-in AARC survey data.")
+    df = ensure_dataset_loaded()
+    if df is None:
         return False
-    if "clean_texts" not in st.session_state or "tokens_list" not in st.session_state:
-        st.warning("Text processing has not been completed. Use the sidebar text settings on the Overview page.")
+    if "clean_texts" not in st.session_state or st.session_state.clean_texts is None:
+        st.warning("Text processing has not been completed. Use the sidebar text settings to configure the text column.")
+        return False
+    if "tokens_list" not in st.session_state or st.session_state.tokens_list is None:
+        st.warning("Token data missing. Use the sidebar text settings to preprocess the text column.")
         return False
     return True
 
