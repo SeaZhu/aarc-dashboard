@@ -76,29 +76,31 @@ def hide_main_nav_entry():
     )
 
     nav_label_overrides = {
-        "Overview": "📊 Overview",
-        "Text Cleaning and Ngrams": "🧹 Text Cleaning & N-grams",
-        "Sentiment Analysis": "😊 Sentiment Analysis",
-        "Topic Modeling Lda": "🧩 Topic Modeling (LDA)",
-        "Word Cooccurrence Network": "🕸️ Word Co-occurrence Network",
-        "Export Results": "💾 Export Results",
+        "overview": "📊 Overview",
+        "textcleaningandngrams": "🧹 Text Cleaning & N-grams",
+        "sentimentanalysis": "😊 Sentiment Analysis",
+        "topicmodelinglda": "🧩 Topic Modeling (LDA)",
+        "wordcooccurrencenetwork": "🕸️ Word Co-occurrence Network",
+        "exportresults": "💾 Export Results",
     }
     st.markdown(
         f"""
         <script>
         const navLabels = {json.dumps(nav_label_overrides)};
+        const normalize = (text) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
         const updateNavLabels = () => {{
-            const nav = window.parent.document.querySelector('[data-testid="stSidebarNav"] ul');
+            const nav = window.parent.document.querySelector('[data-testid="stSidebarNav"]');
             if (!nav) return;
             const links = nav.querySelectorAll('a');
             links.forEach((link) => {{
-                const labelEl = link.querySelector('p');
+                const labelEl =
+                    link.querySelector('p') ||
+                    link.querySelector('span') ||
+                    link.querySelector('[data-testid="stSidebarNavLink"]');
                 if (!labelEl) return;
                 const current = labelEl.innerText.trim();
-                const replacement = navLabels[current];
-                if (replacement && labelEl.innerText !== replacement) {{
-                    labelEl.innerText = replacement;
-                }}
+                const replacement = navLabels[normalize(current)];
+                if (replacement && labelEl.innerText !== replacement) labelEl.textContent = replacement;
             }});
         }};
 
