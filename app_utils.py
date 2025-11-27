@@ -1,4 +1,5 @@
 import itertools
+import json
 from collections import Counter
 from io import BytesIO
 from typing import List, Optional, Tuple
@@ -70,6 +71,47 @@ def hide_main_nav_entry():
         <style>
         [data-testid="stSidebarNav"] ul li:first-child {display: none;}
         </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    nav_label_overrides = {
+        "overview": "📊 Overview",
+        "textcleaningandngrams": "🧹 Text Cleaning & N-grams",
+        "sentimentanalysis": "😊 Sentiment Analysis",
+        "topicmodelinglda": "🧩 Topic Modeling (LDA)",
+        "wordcooccurrencenetwork": "🕸️ Word Co-occurrence Network",
+        "exportresults": "💾 Export Results",
+    }
+    st.markdown(
+        f"""
+        <script>
+        const navLabels = {json.dumps(nav_label_overrides)};
+        const normalize = (text) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const updateNavLabels = () => {{
+            const nav = window.parent.document.querySelector('[data-testid="stSidebarNav"]');
+            if (!nav) return;
+            const links = nav.querySelectorAll('a');
+            links.forEach((link) => {{
+                const labelEl =
+                    link.querySelector('p') ||
+                    link.querySelector('span') ||
+                    link.querySelector('[data-testid="stSidebarNavLink"]');
+                if (!labelEl) return;
+                const current = labelEl.innerText.trim();
+                const replacement = navLabels[normalize(current)];
+                if (replacement && labelEl.innerText !== replacement) labelEl.textContent = replacement;
+            }});
+        }};
+
+        const navContainer = window.parent.document.querySelector('[data-testid="stSidebarNav"]');
+        if (navContainer) {{
+            const observer = new MutationObserver(updateNavLabels);
+            observer.observe(navContainer, {{ childList: true, subtree: true }});
+        }}
+
+        updateNavLabels();
+        </script>
         """,
         unsafe_allow_html=True,
     )
