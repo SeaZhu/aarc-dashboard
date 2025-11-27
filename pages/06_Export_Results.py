@@ -4,7 +4,7 @@ import streamlit as st
 from app_utils import render_export, require_processed_data, topic_model
 
 
-st.set_page_config(page_title="Export Results", page_icon="💾")
+st.set_page_config(page_title="06 Export Results", page_icon="💾")
 
 
 def main():

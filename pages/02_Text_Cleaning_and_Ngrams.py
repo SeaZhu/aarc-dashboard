@@ -3,11 +3,11 @@ import streamlit as st
 from app_utils import render_cleaning, require_processed_data
 
 
-st.set_page_config(page_title="Text Cleaning & Keywords", page_icon="🧹")
+st.set_page_config(page_title="02 Text Cleaning & N-grams", page_icon="🧹")
 
 
 def main():
-    st.title("Text Cleaning & Keywords")
+    st.title("Text Cleaning & N-grams")
     if not require_processed_data():
         return
 

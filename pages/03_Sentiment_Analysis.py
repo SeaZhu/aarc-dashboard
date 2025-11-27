@@ -3,7 +3,7 @@ import streamlit as st
 from app_utils import render_sentiment, require_processed_data
 
 
-st.set_page_config(page_title="Sentiment Analysis", page_icon="😊")
+st.set_page_config(page_title="03 Sentiment Analysis", page_icon="😊")
 
 
 def main():

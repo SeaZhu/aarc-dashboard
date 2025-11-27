@@ -3,7 +3,7 @@ import streamlit as st
 from app_utils import render_network, require_processed_data
 
 
-st.set_page_config(page_title="Co-occurrence Network", page_icon="🕸️")
+st.set_page_config(page_title="05 Word Co-occurrence Network", page_icon="🕸️")
 
 
 def main():

@@ -49,6 +49,26 @@ def load_data() -> pd.DataFrame:
     return pd.read_excel("data/AARC-Survey-Responses.xlsx")
 
 
+def init_state():
+    defaults = {
+        "df": pd.DataFrame(),
+        "text_col": None,
+        "group_col": None,
+        "clean_texts": None,
+        "tokens_list": None,
+        "sentiment_df": None,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
+
+
+def reset_processing():
+    st.session_state.clean_texts = None
+    st.session_state.tokens_list = None
+    st.session_state.sentiment_df = None
+
+
 def preprocess_text(series: pd.Series) -> Tuple[List[str], List[List[str]]]:
     ensure_nltk()
     stop_words = set(stopwords.words("english"))
@@ -80,6 +100,41 @@ def get_sentiment(clean_texts: List[str]) -> pd.DataFrame:
             sentiment = "negative"
         scores.append({"text": text, **score, "sentiment": sentiment})
     return pd.DataFrame(scores)
+
+
+def process_text(df: pd.DataFrame, text_col: str):
+    clean_texts, tokens_list = preprocess_text(df[text_col])
+    sentiment_df = get_sentiment(clean_texts)
+    st.session_state.clean_texts = clean_texts
+    st.session_state.tokens_list = tokens_list
+    st.session_state.sentiment_df = sentiment_df
+
+
+def render_text_settings_sidebar(df: pd.DataFrame) -> bool:
+    text_columns = df.select_dtypes(include=["object"]).columns.tolist()
+    if not text_columns:
+        st.sidebar.error("No text columns found in the dataset.")
+        return False
+
+    with st.sidebar.form("column_selection_form"):
+        st.subheader("Text settings")
+        st.caption("Adjust the text and optional grouping columns used across all pages.")
+        default_text_index = text_columns.index(st.session_state.text_col) if st.session_state.text_col in text_columns else 0
+        text_col = st.selectbox("Text column", text_columns, index=default_text_index)
+        group_col_options = [None] + list(df.columns)
+        default_group_index = (
+            group_col_options.index(st.session_state.group_col) if st.session_state.group_col in group_col_options else 0
+        )
+        group_col: Optional[str] = st.selectbox("Grouping column (optional)", group_col_options, index=default_group_index)
+        submitted = st.form_submit_button("Apply settings")
+
+    if submitted or st.session_state.clean_texts is None:
+        st.session_state.text_col = text_col
+        st.session_state.group_col = group_col
+        process_text(df, text_col)
+        st.sidebar.success("Text preprocessing and sentiment analysis updated.")
+
+    return True
 
 
 def plot_wordcloud(frequencies: dict):
@@ -155,11 +210,12 @@ def download_button(df: pd.DataFrame, label: str, filename: str):
 
 
 def require_processed_data() -> bool:
+    init_state()
     if "df" not in st.session_state or st.session_state.get("df") is None or st.session_state.df.empty:
-        st.warning("Dataset not ready. Go to the Home page to initialize the built-in AARC survey data.")
+        st.warning("Dataset not ready. Open the Overview page to initialize the built-in AARC survey data.")
         return False
     if "clean_texts" not in st.session_state or "tokens_list" not in st.session_state:
-        st.warning("Text processing has not been completed. Configure columns on the Home page.")
+        st.warning("Text processing has not been completed. Use the sidebar text settings on the Overview page.")
         return False
     return True
 
@@ -185,7 +241,7 @@ def render_overview(df: pd.DataFrame):
 
 
 def render_cleaning(df: pd.DataFrame, text_col: str, clean_texts: List[str], tokens_list: List[List[str]]):
-    st.header("Text Cleaning & Keywords")
+    st.header("Text Cleaning & N-grams")
     st.caption("Inspect cleaned survey responses and the most important words.")
 
     st.markdown("**Sample cleaned rows**")
