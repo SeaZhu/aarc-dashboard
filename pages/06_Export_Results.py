@@ -1,20 +1,13 @@
 import pandas as pd
 import streamlit as st
 
-from app_utils import (
-    ensure_data_with_sidebar,
-    hide_main_nav_entry,
-    render_export,
-    require_processed_data,
-    topic_model,
-)
+from app_utils import ensure_data_with_sidebar, render_export, require_processed_data, topic_model
 
 
 st.set_page_config(page_title="Export Results", page_icon="💾")
 
 
 def main():
-    hide_main_nav_entry()
     st.title("Export Results")
     df = ensure_data_with_sidebar()
     if df is None or df.empty:
