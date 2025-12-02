@@ -173,6 +173,12 @@ def reset_processing():
     st.session_state.sentiment_df = None
 
 
+def render_centered_plot(fig):
+    center_cols = st.columns([1, 4, 1])
+    with center_cols[1]:
+        st.pyplot(fig)
+
+
 def preprocess_text(series: pd.Series) -> Tuple[List[str], List[List[str]]]:
     stop_words = load_stopwords()
     lemmatizer = WordNetLemmatizer()
@@ -220,12 +226,13 @@ def render_text_settings_sidebar(df: pd.DataFrame) -> Tuple[Optional[pd.DataFram
     """Render a single survey-item filter and return the filtered DataFrame."""
     unique_items = df["Survey.Item"].dropna().unique().tolist()
     options = ["All survey items"] + [f"Survey item {idx + 1}" for idx in range(len(unique_items))]
-    default_index = options.index(st.session_state.filter_choice) if st.session_state.filter_choice in options else 0
-    selection = st.sidebar.selectbox("Survey item filter", options, index=default_index)
+    previous_choice = st.session_state.get("filter_choice", options[0])
+    default_index = options.index(previous_choice) if previous_choice in options else 0
 
-    filter_changed = selection != st.session_state.filter_choice
+    selection = st.sidebar.selectbox("Survey item filter", options, index=default_index, key="filter_choice")
+
+    filter_changed = selection != previous_choice
     if filter_changed:
-        st.session_state.filter_choice = selection
         reset_processing()
 
     if selection == "All survey items":
@@ -268,12 +275,12 @@ def topic_model(clean_texts: List[str], n_topics: int):
 
 def plot_topic_distribution(topic_matrix):
     topic_counts = topic_matrix.argmax(axis=1)
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(3.2, 2.4))
     sns.countplot(x=topic_counts + 1, palette="viridis", ax=ax)
     ax.set_xlabel("Most Likely Topic")
     ax.set_ylabel("Number of Responses")
     ax.set_title("Document Distribution Across Topics")
-    st.pyplot(fig)
+    render_centered_plot(fig)
     st.caption("This chart shows how many responses were assigned to each topic by the model.")
 
 
@@ -332,8 +339,10 @@ def render_overview(df: pd.DataFrame):
     st.header("Dataset Overview")
     st.caption("This page provides an overview of the raw AARC survey comments.")
 
-    st.markdown("**Dataset Preview (first 50 rows)**")
-    st.dataframe(df.head(50))
+    st.markdown("**Dataset Preview (scroll for more)**")
+    approx_row_height = 38
+    visible_rows = 5
+    st.dataframe(df, height=visible_rows * approx_row_height + 30)
 
     st.markdown("**Basic statistics**")
     summary_cols = ["Survey.Item", "Assigned.Category"]
@@ -342,7 +351,7 @@ def render_overview(df: pd.DataFrame):
     st.markdown("**Sentiment Distribution by Category**")
     if st.session_state.sentiment_df is not None:
         combined = pd.concat([df.reset_index(drop=True), st.session_state.sentiment_df], axis=1)
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(3.2, 2.4))
         sns.countplot(
             data=combined,
             x="Assigned.Category",
@@ -353,7 +362,7 @@ def render_overview(df: pd.DataFrame):
         ax.set_xlabel("Assigned Category")
         ax.set_ylabel("Number of Responses")
         ax.legend(title="Sentiment")
-        st.pyplot(fig)
+        render_centered_plot(fig)
     else:
         st.info("Sentiment results are unavailable. Please ensure preprocessing has completed.")
 
@@ -383,10 +392,10 @@ def render_cleaning(df: pd.DataFrame, text_col: str, clean_texts: List[str], tok
         st.caption("The cloud highlights the most frequent tokens extracted from the Response text.")
 
     st.markdown("**Most frequent terms**")
-    fig, ax = plt.subplots(figsize=(6, 8))
+    fig, ax = plt.subplots(figsize=(3, 4))
     sns.barplot(data=freq_df.head(25), y="term", x="frequency", palette="mako", ax=ax)
     ax.set_title("Top Terms")
-    st.pyplot(fig)
+    render_centered_plot(fig)
 
 
 def render_sentiment(df: pd.DataFrame, text_col: str, group_col: Optional[str], sentiment_df: pd.DataFrame):
@@ -400,7 +409,7 @@ def render_sentiment(df: pd.DataFrame, text_col: str, group_col: Optional[str], 
     st.dataframe(sentiment_table)
 
     st.markdown("**Sentiment distribution**")
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(figsize=(3.2, 2.4))
     order = ["negative", "neutral", "positive"]
     sns.countplot(
         data=combined,
@@ -411,16 +420,16 @@ def render_sentiment(df: pd.DataFrame, text_col: str, group_col: Optional[str], 
     )
     ax.set_xlabel("Sentiment label")
     ax.set_ylabel("Count")
-    st.pyplot(fig)
+    render_centered_plot(fig)
 
     if group_col and combined["compound"].nunique() > 1:
         st.markdown("**Average Sentiment by Category**")
         grouped = combined.groupby(group_col)["compound"].mean().reset_index()
-        fig2, ax2 = plt.subplots(figsize=(8, 4))
+        fig2, ax2 = plt.subplots(figsize=(4, 2))
         sns.barplot(data=grouped, x=group_col, y="compound", palette="viridis", ax=ax2)
         ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha="right")
         ax2.axhline(0, color="#9ca3af", linestyle="--", linewidth=1)
-        st.pyplot(fig2)
+        render_centered_plot(fig2)
     elif group_col:
         st.info("Average Sentiment by Category is hidden because all sentiment scores are identical.")
 
