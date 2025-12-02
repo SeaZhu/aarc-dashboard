@@ -346,8 +346,11 @@ def render_cleaning(df: pd.DataFrame, text_col: str, clean_texts: List[str], tok
 
     st.markdown("**Sample cleaned rows**")
     preview_df = pd.DataFrame({"original": df[text_col], "cleaned": clean_texts})
-    preview_df = preview_df.drop_duplicates(subset=["cleaned"]).head(2)
+    preview_df = preview_df.drop_duplicates(subset=["cleaned"]).head(5)
     st.dataframe(preview_df)
+    st.caption(
+        "Cleaned responses are lowercased, stripped of non-letter characters, lemmatized/stemmed, and stop words are removed."
+    )
 
     frequencies = Counter(itertools.chain.from_iterable(tokens_list))
     freq_df = pd.DataFrame(frequencies.most_common(50), columns=["term", "frequency"])
