@@ -7,7 +7,6 @@ st.set_page_config(page_title="Word Co-occurrence Network", page_icon="🕸️")
 
 
 def main():
-    st.title("Word Co-occurrence Network")
     df = ensure_data_with_sidebar()
     if df is None or df.empty:
         return

@@ -7,7 +7,6 @@ st.set_page_config(page_title="Text Cleaning & N-grams", page_icon="🧹")
 
 
 def main():
-    st.title("Text Cleaning & N-grams")
     df = ensure_data_with_sidebar()
     if df is None or df.empty:
         return
