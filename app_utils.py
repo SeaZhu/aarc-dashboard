@@ -201,7 +201,7 @@ def process_text(df: pd.DataFrame):
 def render_text_settings_sidebar(df: pd.DataFrame) -> Tuple[Optional[pd.DataFrame], bool]:
     """Render a single survey-item filter and return the filtered DataFrame."""
     unique_items = df["Survey.Item"].dropna().unique().tolist()
-    options = ["All survey items"] + [f"Show comments only for Survey item {idx + 1}" for idx in range(len(unique_items))]
+    options = ["All survey items"] + [f"Survey item {idx + 1}" for idx in range(len(unique_items))]
     default_index = options.index(st.session_state.filter_choice) if st.session_state.filter_choice in options else 0
     selection = st.sidebar.selectbox("Survey item filter", options, index=default_index)
 
