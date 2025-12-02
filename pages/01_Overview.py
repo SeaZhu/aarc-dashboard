@@ -8,7 +8,7 @@ st.set_page_config(page_title="Overview", page_icon="📊")
 
 def main():
     st.title("Overview")
-    st.caption("Preview the bundled survey data and adjust text settings in the sidebar.")
+    st.caption("This page provides an overview of the raw AARC survey comments.")
 
     df = ensure_data_with_sidebar()
     if df is None or df.empty:

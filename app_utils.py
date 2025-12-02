@@ -53,11 +53,12 @@ def load_data() -> pd.DataFrame:
 def init_state():
     defaults = {
         "df": pd.DataFrame(),
-        "text_col": None,
-        "group_col": None,
+        "text_col": "Response",
+        "group_col": "Assigned.Category",
         "clean_texts": None,
         "tokens_list": None,
         "sentiment_df": None,
+        "filter_choice": "All survey items",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -131,13 +132,20 @@ def ensure_dataset_loaded() -> Optional[pd.DataFrame]:
 
 
 def ensure_data_with_sidebar() -> Optional[pd.DataFrame]:
-    """Load data if needed and render the shared text settings sidebar."""
+    """Load data, apply the survey-item filter, and process text from Response."""
     df = ensure_dataset_loaded()
     if df is None:
         return None
-    if not render_text_settings_sidebar(df):
+
+    filtered_df, filter_changed = render_text_settings_sidebar(df)
+    if filtered_df is None or filtered_df.empty:
+        st.warning("No responses available for the selected survey item.")
         return None
-    return df
+
+    if filter_changed or st.session_state.clean_texts is None:
+        process_text(filtered_df)
+
+    return filtered_df
 
 
 def reset_processing():
@@ -164,54 +172,55 @@ def preprocess_text(series: pd.Series) -> Tuple[List[str], List[List[str]]]:
     return clean_texts, tokenized
 
 
-def get_sentiment(clean_texts: List[str]) -> pd.DataFrame:
+def get_sentiment(raw_texts: pd.Series) -> pd.DataFrame:
     ensure_nltk()
     sia = SentimentIntensityAnalyzer()
     scores = []
-    for text in clean_texts:
+    for text in raw_texts.fillna("").astype(str):
         score = sia.polarity_scores(text)
         sentiment = "neutral"
         if score["compound"] > 0.05:
             sentiment = "positive"
         elif score["compound"] < -0.05:
             sentiment = "negative"
-        scores.append({"text": text, **score, "sentiment": sentiment})
+        scores.append({"raw_text": text, **score, "sentiment": sentiment})
     return pd.DataFrame(scores)
 
 
-def process_text(df: pd.DataFrame, text_col: str):
+def process_text(df: pd.DataFrame):
+    text_col = "Response"
     clean_texts, tokens_list = preprocess_text(df[text_col])
-    sentiment_df = get_sentiment(clean_texts)
+    sentiment_df = get_sentiment(df[text_col])
+    st.session_state.text_col = text_col
+    st.session_state.group_col = "Assigned.Category"
     st.session_state.clean_texts = clean_texts
     st.session_state.tokens_list = tokens_list
     st.session_state.sentiment_df = sentiment_df
 
 
-def render_text_settings_sidebar(df: pd.DataFrame) -> bool:
-    text_columns = df.select_dtypes(include=["object"]).columns.tolist()
-    if not text_columns:
-        st.sidebar.error("No text columns found in the dataset.")
-        return False
+def render_text_settings_sidebar(df: pd.DataFrame) -> Tuple[Optional[pd.DataFrame], bool]:
+    """Render a single survey-item filter and return the filtered DataFrame."""
+    unique_items = df["Survey.Item"].dropna().unique().tolist()
+    options = ["All survey items"] + [f"Show comments only for Survey item {idx + 1}" for idx in range(len(unique_items))]
+    default_index = options.index(st.session_state.filter_choice) if st.session_state.filter_choice in options else 0
+    selection = st.sidebar.selectbox("Survey item filter", options, index=default_index)
 
-    with st.sidebar.form("column_selection_form"):
-        st.subheader("Text settings")
-        st.caption("Adjust the text and optional grouping columns used across all pages.")
-        default_text_index = text_columns.index(st.session_state.text_col) if st.session_state.text_col in text_columns else 0
-        text_col = st.selectbox("Text column", text_columns, index=default_text_index)
-        group_col_options = [None] + list(df.columns)
-        default_group_index = (
-            group_col_options.index(st.session_state.group_col) if st.session_state.group_col in group_col_options else 0
-        )
-        group_col: Optional[str] = st.selectbox("Grouping column (optional)", group_col_options, index=default_group_index)
-        submitted = st.form_submit_button("Apply settings")
+    filter_changed = selection != st.session_state.filter_choice
+    if filter_changed:
+        st.session_state.filter_choice = selection
+        reset_processing()
 
-    if submitted or st.session_state.clean_texts is None:
-        st.session_state.text_col = text_col
-        st.session_state.group_col = group_col
-        process_text(df, text_col)
-        st.sidebar.success("Text preprocessing and sentiment analysis updated.")
+    if selection == "All survey items":
+        return df, filter_changed
 
-    return True
+    try:
+        selected_idx = options.index(selection) - 1
+        target_item = unique_items[selected_idx]
+    except (ValueError, IndexError):
+        return df, filter_changed
+
+    filtered = df[df["Survey.Item"] == target_item]
+    return filtered, filter_changed
 
 
 def plot_wordcloud(frequencies: dict):
@@ -226,8 +235,8 @@ def plot_wordcloud(frequencies: dict):
     st.pyplot(fig)
 
 
-def topic_model(clean_texts: List[str], n_topics: int, max_features: int = 1000):
-    vectorizer = CountVectorizer(stop_words="english", max_features=max_features)
+def topic_model(clean_texts: List[str], n_topics: int):
+    vectorizer = CountVectorizer(max_features=1500)
     dtm = vectorizer.fit_transform(clean_texts)
     lda = LatentDirichletAllocation(n_components=n_topics, random_state=42)
     topics = lda.fit_transform(dtm)
@@ -245,13 +254,15 @@ def plot_topic_distribution(topic_matrix):
     sns.countplot(x=topic_counts + 1, palette="viridis", ax=ax)
     ax.set_xlabel("Most Likely Topic")
     ax.set_ylabel("Number of Responses")
+    ax.set_title("Document Distribution Across Topics")
     st.pyplot(fig)
+    st.caption("This chart shows how many responses were assigned to each topic by the model.")
 
 
 def build_cooccurrence(tokens_list: List[List[str]], top_n: int = 20):
     all_tokens = list(itertools.chain.from_iterable(tokens_list))
     freq = Counter(all_tokens)
-    top_terms = set([w for w, _ in freq.most_common(top_n)])
+    top_terms = set([w for w, c in freq.most_common(top_n) if c > 1])
     co_counts = Counter()
     for tokens in tokens_list:
         unique_tokens = [t for t in set(tokens) if t in top_terms]
@@ -291,32 +302,42 @@ def require_processed_data() -> bool:
     if df is None:
         return False
     if "clean_texts" not in st.session_state or st.session_state.clean_texts is None:
-        st.warning("Text processing has not been completed. Use the sidebar text settings to configure the text column.")
+        st.warning("Text processing has not been completed. Use the sidebar survey-item filter to refresh the Response analytics.")
         return False
     if "tokens_list" not in st.session_state or st.session_state.tokens_list is None:
-        st.warning("Token data missing. Use the sidebar text settings to preprocess the text column.")
+        st.warning("Token data missing. Use the sidebar survey-item filter to preprocess the Response column.")
         return False
     return True
 
 
 def render_overview(df: pd.DataFrame):
     st.header("Dataset Overview")
-    st.caption("Preview and explore the structure of the loaded survey responses.")
+    st.caption("This page provides an overview of the raw AARC survey comments.")
 
-    st.markdown("**Preview (first 50 rows)**")
+    st.markdown("**Dataset Preview (first 50 rows)**")
     st.dataframe(df.head(50))
 
     st.markdown("**Basic statistics**")
-    st.write(df.describe(include="all").transpose())
+    summary_cols = ["Survey.Item", "Assigned.Category"]
+    st.write(df[summary_cols].describe(include="all").transpose())
 
-    st.markdown("**Value counts by column**")
-    col1, col2 = st.columns(2)
-    with col1:
-        count_col = st.selectbox("Select column for counts", df.columns)
-    with col2:
-        top_n = st.slider("Show top N values", 5, 30, 10, key="overview_topn")
-    counts = df[count_col].value_counts().head(top_n)
-    st.bar_chart(counts)
+    st.markdown("**Sentiment Distribution by Category**")
+    if st.session_state.sentiment_df is not None:
+        combined = pd.concat([df.reset_index(drop=True), st.session_state.sentiment_df], axis=1)
+        fig, ax = plt.subplots()
+        sns.countplot(
+            data=combined,
+            x="Assigned.Category",
+            hue="sentiment",
+            palette={"positive": "#10b981", "neutral": "#d1d5db", "negative": "#ef4444"},
+            ax=ax,
+        )
+        ax.set_xlabel("Assigned Category")
+        ax.set_ylabel("Number of Responses")
+        ax.legend(title="Sentiment")
+        st.pyplot(fig)
+    else:
+        st.info("Sentiment results are unavailable. Please ensure preprocessing has completed.")
 
 
 def render_cleaning(df: pd.DataFrame, text_col: str, clean_texts: List[str], tokens_list: List[List[str]]):
@@ -324,7 +345,8 @@ def render_cleaning(df: pd.DataFrame, text_col: str, clean_texts: List[str], tok
     st.caption("Inspect cleaned survey responses and the most important words.")
 
     st.markdown("**Sample cleaned rows**")
-    preview_df = pd.DataFrame({"original": df[text_col].head(10), "cleaned": clean_texts[:10]})
+    preview_df = pd.DataFrame({"original": df[text_col], "cleaned": clean_texts})
+    preview_df = preview_df.drop_duplicates(subset=["cleaned"]).head(2)
     st.dataframe(preview_df)
 
     frequencies = Counter(itertools.chain.from_iterable(tokens_list))
@@ -337,6 +359,7 @@ def render_cleaning(df: pd.DataFrame, text_col: str, clean_texts: List[str], tok
     with col2:
         st.markdown("**Word Cloud**")
         plot_wordcloud(dict(frequencies))
+        st.caption("The cloud highlights the most frequent tokens extracted from the Response text.")
 
     st.markdown("**Most frequent terms**")
     fig, ax = plt.subplots(figsize=(6, 8))
@@ -349,39 +372,57 @@ def render_sentiment(df: pd.DataFrame, text_col: str, group_col: Optional[str], 
     st.header("Sentiment Analysis")
     st.caption("VADER-based polarity scores and distributions for each response.")
 
-    combined = pd.concat([df.reset_index(drop=True), sentiment_df], axis=1)
+    combined = pd.concat([df.reset_index(drop=True), sentiment_df.reset_index(drop=True)], axis=1)
     st.markdown("**Per-response sentiment**")
-    st.dataframe(combined[[text_col, "compound", "sentiment"]])
+    sentiment_table = combined[["Survey.Item", text_col, "sentiment", "compound"]]
+    sentiment_table = sentiment_table.rename(columns={text_col: "Response"})
+    st.dataframe(sentiment_table)
 
     st.markdown("**Sentiment distribution**")
     fig, ax = plt.subplots()
-    sns.countplot(data=combined, x="sentiment", palette=["#ef4444", "#d1d5db", "#10b981"], ax=ax)
+    order = ["negative", "neutral", "positive"]
+    sns.countplot(
+        data=combined,
+        x="sentiment",
+        order=order,
+        palette={"positive": "#10b981", "neutral": "#d1d5db", "negative": "#ef4444"},
+        ax=ax,
+    )
     ax.set_xlabel("Sentiment label")
     ax.set_ylabel("Count")
     st.pyplot(fig)
 
-    if group_col:
-        st.markdown("**Average sentiment by group**")
+    if group_col and combined["compound"].nunique() > 1:
+        st.markdown("**Average Sentiment by Category**")
         grouped = combined.groupby(group_col)["compound"].mean().reset_index()
         fig2, ax2 = plt.subplots(figsize=(8, 4))
         sns.barplot(data=grouped, x=group_col, y="compound", palette="viridis", ax=ax2)
         ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha="right")
         ax2.axhline(0, color="#9ca3af", linestyle="--", linewidth=1)
         st.pyplot(fig2)
+    elif group_col:
+        st.info("Average Sentiment by Category is hidden because all sentiment scores are identical.")
 
 
 def render_topics(clean_texts: List[str]):
     st.header("Topic Modeling (LDA)")
     st.caption("Discover common themes across survey responses.")
+    st.info(
+        "Topics are built from cleaned Response text (lowercased, lemmatized, and stripped of stop words) "
+        "to focus on the most informative tokens."
+    )
 
     n_topics = st.slider("Number of topics", 2, 8, 3)
-    max_features = st.slider("Max vocabulary size", 300, 2000, 1000, step=100)
     try:
-        topic_matrix, topic_keywords = topic_model(clean_texts, n_topics, max_features=max_features)
+        topic_matrix, topic_keywords = topic_model(clean_texts, n_topics)
         topics_df = pd.DataFrame(topic_keywords)
         st.markdown("**Top keywords per topic**")
         st.dataframe(topics_df)
-        plot_topic_distribution(topic_matrix)
+
+        if topic_matrix.shape[0] > 0 and len(set(topic_matrix.argmax(axis=1))) > 1:
+            plot_topic_distribution(topic_matrix)
+        else:
+            st.info("Document distribution across topics is hidden because the assignments are repetitive.")
         return topics_df
     except ValueError:
         st.error("Not enough data to build topics. Try adjusting the topic count or cleaning options.")
@@ -390,7 +431,10 @@ def render_topics(clean_texts: List[str]):
 
 def render_network(tokens_list: List[List[str]]):
     st.header("Word Co-occurrence Network")
-    st.caption("Relationships between high-frequency terms shown as a network graph.")
+    st.caption(
+        "Relationships between high-frequency terms shown as a network graph. "
+        "Co-occurrence counts reflect how often words appear together within the same response."
+    )
 
     top_n_terms = st.slider("Top N terms to consider", 10, 50, 20)
     min_co = st.slider("Minimum co-occurrence to display", 1, 5, 2)
