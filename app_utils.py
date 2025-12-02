@@ -1,3 +1,4 @@
+import importlib
 import itertools
 import json
 from collections import Counter
@@ -42,6 +43,24 @@ def ensure_nltk():
         nltk.data.find("sentiment/vader_lexicon.zip")
     except LookupError:
         nltk.download("vader_lexicon")
+
+
+def load_stopwords() -> set:
+    """Load English stopwords with a fallback reload for corrupted corpus objects."""
+
+    ensure_nltk()
+    try:
+        return set(stopwords.words("english"))
+    except AttributeError:
+        nltk.download("stopwords")
+        importlib.reload(nltk.corpus)
+        from nltk.corpus import stopwords as refreshed_stopwords
+
+        try:
+            return set(refreshed_stopwords.words("english"))
+        except AttributeError:
+            st.warning("Stopwords corpus could not be loaded; proceeding without stopword removal.")
+            return set()
 
 
 @st.cache_data(show_spinner=True)
@@ -155,8 +174,7 @@ def reset_processing():
 
 
 def preprocess_text(series: pd.Series) -> Tuple[List[str], List[List[str]]]:
-    ensure_nltk()
-    stop_words = set(stopwords.words("english"))
+    stop_words = load_stopwords()
     lemmatizer = WordNetLemmatizer()
     stemmer = PorterStemmer()
 
@@ -346,8 +364,11 @@ def render_cleaning(df: pd.DataFrame, text_col: str, clean_texts: List[str], tok
 
     st.markdown("**Sample cleaned rows**")
     preview_df = pd.DataFrame({"original": df[text_col], "cleaned": clean_texts})
-    preview_df = preview_df.drop_duplicates(subset=["cleaned"]).head(2)
+    preview_df = preview_df.drop_duplicates(subset=["cleaned"]).head(5)
     st.dataframe(preview_df)
+    st.caption(
+        "Cleaned responses are lowercased, stripped of non-letter characters, lemmatized/stemmed, and stop words are removed."
+    )
 
     frequencies = Counter(itertools.chain.from_iterable(tokens_list))
     freq_df = pd.DataFrame(frequencies.most_common(50), columns=["term", "frequency"])
