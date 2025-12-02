@@ -306,14 +306,14 @@ def plot_network(freq: Counter, co_counts: Counter, min_co: int = 2):
         graph.add_edge(a, b, weight=weight)
     sizes = [300 + freq[node] * 20 for node in graph.nodes()]
     pos = nx.spring_layout(graph, k=0.6, seed=42)
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(4, 3))
     nx.draw_networkx_edges(
         graph, pos, width=[graph[u][v]["weight"] for u, v in graph.edges()], alpha=0.5, edge_color="#888"
     )
     nx.draw_networkx_nodes(graph, pos, node_size=sizes, node_color="#4c78a8", alpha=0.8)
     nx.draw_networkx_labels(graph, pos, font_size=10, font_color="white")
     ax.axis("off")
-    st.pyplot(fig)
+    render_centered_plot(fig)
 
 
 def download_button(df: pd.DataFrame, label: str, filename: str):
@@ -348,23 +348,17 @@ def render_overview(df: pd.DataFrame):
     summary_cols = ["Survey.Item", "Assigned.Category"]
     st.write(df[summary_cols].describe(include="all").transpose())
 
-    st.markdown("**Sentiment Distribution by Category**")
-    if st.session_state.sentiment_df is not None:
-        combined = pd.concat([df.reset_index(drop=True), st.session_state.sentiment_df], axis=1)
-        fig, ax = plt.subplots(figsize=(3.2, 2.4))
-        sns.countplot(
-            data=combined,
-            x="Assigned.Category",
-            hue="sentiment",
-            palette={"positive": "#10b981", "neutral": "#d1d5db", "negative": "#ef4444"},
-            ax=ax,
-        )
-        ax.set_xlabel("Assigned Category")
-        ax.set_ylabel("Number of Responses")
-        ax.legend(title="Sentiment")
-        render_centered_plot(fig)
-    else:
-        st.info("Sentiment results are unavailable. Please ensure preprocessing has completed.")
+    st.markdown("**responses distribution by assigned category**")
+    fig, ax = plt.subplots(figsize=(3.2, 2.4))
+    sns.countplot(
+        data=df,
+        x="Assigned.Category",
+        color="#4c78a8",
+        ax=ax,
+    )
+    ax.set_xlabel("Assigned Category")
+    ax.set_ylabel("Number of Responses")
+    render_centered_plot(fig)
 
 
 def render_cleaning(df: pd.DataFrame, text_col: str, clean_texts: List[str], tokens_list: List[List[str]]):
